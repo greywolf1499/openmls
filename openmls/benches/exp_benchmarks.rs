@@ -134,6 +134,7 @@ fn benchmark_group_creation(c: &mut Criterion, provider: &impl OpenMlsProvider) 
 
                         // 2. Group configuration.
                         let mls_group_create_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
 
@@ -231,6 +232,7 @@ fn benchmark_add_member_sender(c: &mut Criterion, provider: &impl OpenMlsProvide
 
                         // 2. Create the group configuration.
                         let mls_group_create_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
 
@@ -336,6 +338,7 @@ fn benchmark_add_member_receiver_new(c: &mut Criterion, provider: &impl OpenMlsP
                         );
                         // 2. Create the group configuration.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         // 3. Create the group.
@@ -441,7 +444,7 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, provider: &impl Ope
                 // start from the state before the new member was added.
                 b.iter_batched(
                     || {
-                        // SETUP: Create a group with `initial_size` members.
+                        // SETUP: Create a group with initial_size members.
                         // 1. Create Alice's credential and key pair
                         let (alice_credential, alice_signer) = generate_credential_with_key(
                             b"Alice".to_vec(),
@@ -479,6 +482,7 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, provider: &impl Ope
 
                         // 6. Create group config and Alice's initial group
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         let mut alice_group = MlsGroup::new(
@@ -586,6 +590,7 @@ fn benchmark_self_update_sender(c: &mut Criterion, provider: &impl OpenMlsProvid
                         );
                         // 2. Create the group configuration.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         // 3. Create the group.
@@ -678,6 +683,7 @@ fn benchmark_self_update_receiver(c: &mut Criterion, provider: &impl OpenMlsProv
 
                         // 3. Create group config and Alice's group.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         let mut alice_group = MlsGroup::new(
@@ -783,6 +789,7 @@ fn benchmark_remove_member_sender(c: &mut Criterion, provider: &impl OpenMlsProv
                         );
                         // 2. Create the group.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         let mut alice_group =
@@ -872,6 +879,7 @@ fn benchmark_remove_member_receiver(c: &mut Criterion, provider: &impl OpenMlsPr
 
                         // 2. Alice creates the group and adds Bob.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         let mut alice_group =
@@ -997,6 +1005,7 @@ fn benchmark_send_application_message(c: &mut Criterion, provider: &impl OpenMls
                         );
                         // 2. Create the group configuration.
                         let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
                             .ciphersuite(ciphersuite)
                             .build();
                         // 3. Create the group.
@@ -1045,6 +1054,114 @@ fn benchmark_send_application_message(c: &mut Criterion, provider: &impl OpenMls
     group.finish();
 }
 
+// # Benchmark: Receive Application Message
+// * Objective: Measures the time it takes for a group member to process and decrypt
+// * an incoming application message in a group of size n.
+fn benchmark_receive_application_message(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("6.2. Application Message (Receive)");
+
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
+        for &size in GROUP_SIZES {
+            if size < 2 {
+                continue;
+            } // Need a sender and a receiver.
+
+            let benchmark_id = BenchmarkId::new(
+                "ReceiveMessage",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_with_setup(
+                    || {
+                        // SETUP: Create a stable group of size, have Alice send a message,
+                        // and prepare for Bob to receive it.
+                        // 1. Create Alice's credential and key pair.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create Bob's credential and key pair.
+                        let (bob_credential, bob_signer) = generate_credential_with_key(
+                            b"Bob".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let bob_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &bob_signer,
+                            bob_credential,
+                        );
+
+                        // 3. Create the group configuration.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .wire_format_policy(PURE_PLAINTEXT_WIRE_FORMAT_POLICY)
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        // 4. Create Alice's group.
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .unwrap();
+
+                        // Add Bob and any other members
+                        let mut key_packages_to_add = vec![bob_key_package.key_package().clone()];
+                        for i in 3..=size {
+                            let (member_credential, member_signer) = generate_credential_with_key(
+                                format!("Member {}", i).into_bytes(),
+                                ciphersuite.signature_algorithm(),
+                                provider,
+                            );
+                            let kp = generate_key_package(
+                                ciphersuite,
+                                provider,
+                                &member_signer,
+                                member_credential,
+                            );
+                            key_packages_to_add.push(kp.key_package().clone());
+                        }
+
+                        let (_, welcome, _) = alice_group
+                            .add_members(provider, &alice_signer, &key_packages_to_add)
+                            .unwrap();
+                        alice_group.merge_pending_commit(provider).unwrap();
+
+                        // 5. Create a staged welcome for Bob.
+                        let welcome_msg: MlsMessageIn = welcome.into();
+                        let staged_welcome = StagedWelcome::new_from_welcome(
+                            provider,
+                            group_config.join_config(),
+                            welcome_msg.into_welcome().unwrap(),
+                            Some(alice_group.export_ratchet_tree().into()),
+                        )
+                        .unwrap();
+                        let bob_group = staged_welcome.into_group(provider).unwrap();
+
+                        // 6. Alice creates an application message to send to Bob.
+                        // This is the message that Bob will receive.
+                        let application_message = alice_group
+                            .create_message(provider, &alice_signer, b"Hello, Bob!")
+                            .unwrap();
+
+                        (bob_group, application_message)
+                    },
+                    |(mut bob_group, application_message)| {
+                        // TIMED: The cost of decrypting and verifying the message.
+                        let _processed_message = bob_group
+                            .process_message(
+                                provider,
+                                application_message.into_protocol_message().unwrap(),
+                            )
+                            .expect("Error processing application message.");
+                    },
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -1064,6 +1181,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_remove_member_receiver(c, provider);
     // ─── Objective 6 ─────────────────────────────────────────────────────
     benchmark_send_application_message(c, provider);
+    benchmark_receive_application_message(c, provider);
 }
 
 // Register the benchmark group with Criterion.
