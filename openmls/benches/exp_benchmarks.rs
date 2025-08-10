@@ -10,14 +10,14 @@ use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::OpenMlsProvider;
 
 // ─── Constants And Configuration ─────────────────────────────────────────────
-const GROUP_SIZES: &[usize] = &[2, 10, 50, 100];
+// const GROUP_SIZES: &[usize] = &[2, 10, 50, 100];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500];
 // const GROUP_SIZES: &[usize] = &[500, 600, 700, 800, 900, 1000];
-// const GROUP_SIZES: &[usize] = &[100];
+const GROUP_SIZES: &[usize] = &[100];
 
 const CIPHERSUITES_TO_TEST: &[Ciphersuite] = &[
     Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
-    Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
+    // Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
 ];
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
@@ -636,6 +636,123 @@ fn benchmark_self_update_sender(c: &mut Criterion, provider: &impl OpenMlsProvid
     group.finish();
 }
 
+// # Benchmark: Self-Update (Receiver)
+// * Objective: Measures the time for an existing group member in a group of size n
+// * to process a Commit message from another member's self-update.
+fn benchmark_self_update_receiver(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("4.2. Group Update (Receiver - SelfUpdate)");
+
+    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+        for &size in GROUP_SIZES {
+            if size < 2 {
+                continue;
+            }
+
+            let benchmark_id = BenchmarkId::new(
+                "SelfUpdateReceiver",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a group with size members and perform a self-update.
+                        // 1. Create Alice's credential.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create Bob's credential and key package.
+                        let (bob_credential, bob_signer) = generate_credential_with_key(
+                            b"Bob".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let bob_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &bob_signer,
+                            bob_credential,
+                        );
+
+                        // 3. Create group config and Alice's group.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        let mut alice_group = MlsGroup::new(
+                            provider,
+                            &alice_signer,
+                            &group_config,
+                            alice_credential.clone(),
+                        )
+                        .expect("Error creating group for Alice.");
+
+                        // 4. Add Bob and other initial members to Alice's group.
+                        let mut members_to_add = vec![bob_key_package.key_package().clone()];
+                        for i in 3..=size {
+                            let (member_credential, member_signer) = generate_credential_with_key(
+                                format!("Member {}", i).into_bytes(),
+                                ciphersuite.signature_algorithm(),
+                                provider,
+                            );
+                            let kp = generate_key_package(
+                                ciphersuite,
+                                provider,
+                                &member_signer,
+                                member_credential,
+                            );
+                            members_to_add.push(kp.key_package().clone());
+                        }
+
+                        let (_, welcome, _) = alice_group
+                            .add_members(provider, &alice_signer, &members_to_add)
+                            .unwrap();
+                        alice_group.merge_pending_commit(provider).unwrap();
+
+                        // 5. Create a staged welcome for Bob.
+                        let staged_welcome = StagedWelcome::new_from_welcome(
+                            provider,
+                            group_config.join_config(),
+                            welcome.into_welcome().unwrap(),
+                            Some(alice_group.export_ratchet_tree().into()),
+                        )
+                        .unwrap();
+                        // 6. Create Bob's group.
+                        let bob_group = staged_welcome.into_group(provider).unwrap();
+
+                        // 7. Alice performs a self-update.
+                        let (commit_message, _, _) = alice_group
+                            .self_update(provider, &alice_signer, LeafNodeParameters::default())
+                            .unwrap()
+                            .into_contents();
+                        (bob_group, commit_message)
+                    },
+                    |(mut bob_group, commit_message)| {
+                        let processed = bob_group
+                            .process_message(
+                                provider,
+                                commit_message.into_protocol_message().unwrap(),
+                            )
+                            .expect("Error processing update commit.");
+                        if let ProcessedMessageContent::StagedCommitMessage(staged_commit) =
+                            processed.into_content()
+                        {
+                            bob_group
+                                .merge_staged_commit(provider, *staged_commit)
+                                .expect("Error merging staged commit.");
+                        } else {
+                            panic!("Expected a StagedCommitMessage");
+                        }
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -649,6 +766,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_add_member_receiver_existing(c, provider);
     // ─── Objective 4 ─────────────────────────────────────────────────────
     benchmark_self_update_sender(c, provider);
+    benchmark_self_update_receiver(c, provider);
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
 
