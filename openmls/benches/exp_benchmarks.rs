@@ -304,6 +304,118 @@ fn benchmark_add_member_sender(c: &mut Criterion) {
     group.finish();
 }
 
+// # Benchmark: Add Member (Receiver - New)
+// * Objective: Measures the time for a new member to process a Welcome message and
+// join a group, bringing it to size n.
+fn benchmark_add_member_receiver_new(c: &mut Criterion) {
+    let mut group = c.benchmark_group("3.2. Member Addition (Receiver - New Member)");
+    let provider = &OpenMlsRustCrypto::default();
+
+    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+        for &size in GROUP_SIZES {
+            if size < 2 {
+                continue;
+            } // A new member can only join a group of at least 1.
+            let initial_size = size - 1;
+
+            let benchmark_id = BenchmarkId::new(
+                "AddMemberNewReceiver",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a group of initial_size and a Welcome message for a new member.
+                        // 1. Create Alice's credential and signer.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create the group configuration.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        // 3. Create the group.
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .unwrap();
+
+                        // 4. Add initial members to the group.
+                        // If initial_size is greater than 1, we add members to the group.
+                        if initial_size > 1 {
+                            let mut key_packages = Vec::new();
+                            for i in 2..=initial_size {
+                                let (member_credential_with_key, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential_with_key,
+                                );
+                                key_packages.push(kp.key_package().clone());
+                            }
+                            alice_group
+                                .add_members(provider, &alice_signer, &key_packages)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+                        }
+
+                        // 5. Create the new member's (Bob's) identity and generate the Welcome.
+                        let (bob_credential_with_key, bob_signer) = generate_credential_with_key(
+                            b"bob".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let bob_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &bob_signer,
+                            bob_credential_with_key,
+                        );
+
+                        let (_, welcome, _) = alice_group
+                            .add_members(
+                                provider,
+                                &alice_signer,
+                                &[bob_key_package.key_package().clone()],
+                            )
+                            .unwrap();
+                        alice_group.merge_pending_commit(provider).unwrap();
+
+                        (
+                            welcome,
+                            group_config.join_config().clone(),
+                            Some(alice_group.export_ratchet_tree().into()),
+                        )
+                    },
+                    |(welcome, join_config, ratchet_tree)| {
+                        // TIMED: Processing the Welcome message to create the group state.
+                        let welcome_msg: MlsMessageIn = welcome.into();
+                        let staged_welcome = StagedWelcome::new_from_welcome(
+                            provider,
+                            &join_config,
+                            welcome_msg.into_welcome().unwrap(),
+                            ratchet_tree,
+                        )
+                        .unwrap();
+
+                        let _bob_group = staged_welcome.into_group(provider).unwrap();
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     // ─── Objective 1 ─────────────────────────────────────────────────────
@@ -312,6 +424,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_group_creation(c);
     // ─── Objective 3 ─────────────────────────────────────────────────────
     benchmark_add_member_sender(c);
+    benchmark_add_member_receiver_new(c);
     // ─── Objective 4 ─────────────────────────────────────────────────────
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
