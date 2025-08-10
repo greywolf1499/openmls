@@ -417,6 +417,145 @@ fn benchmark_add_member_receiver_new(c: &mut Criterion, provider: &impl OpenMlsP
     group.finish();
 }
 
+// # Benchmark: Add Member (Receiver - Existing)
+// * Objective: Measures the time for an existing member to process a Commit that
+// * adds a new member, bringing the group to size n.
+fn benchmark_add_member_receiver_existing(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("3.3. Member Addition (Receiver - Existing Member)");
+
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
+        for &size in GROUP_SIZES {
+            if size < 3 {
+                continue;
+            } // Need at least one creator, one existing member, and one new member.
+            let initial_size = size - 1;
+
+            let benchmark_id = BenchmarkId::new(
+                "AddMemberExistingReceiver",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                // iter_batched is critical because the timed routine modifies the state of
+                // existing_member_group by merging a commit. Each measurement must
+                // start from the state before the new member was added.
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a group with `initial_size` members.
+                        // 1. Create Alice's credential and key pair
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create Bob's credential and key pair
+                        let (bob_credential_with_key, bob_signer) = generate_credential_with_key(
+                            b"Bob".to_vec(), // The new member
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 3. Create Charlie's credential and key pair
+                        let (charlie_credential_with_key, charlie_signer) =
+                            generate_credential_with_key(
+                                b"Charlie".to_vec(), // The existing member
+                                ciphersuite.signature_algorithm(),
+                                provider,
+                            );
+
+                        // 4. Create Bob's key package
+                        let bob_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &bob_signer,
+                            bob_credential_with_key,
+                        );
+                        // 5. Create Charlie's key package
+                        let charlie_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &charlie_signer,
+                            charlie_credential_with_key.clone(),
+                        );
+
+                        // 6. Create group config and Alice's initial group
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        let mut alice_group = MlsGroup::new(
+                            provider,
+                            &alice_signer,
+                            &group_config,
+                            alice_credential.clone(),
+                        )
+                        .unwrap();
+
+                        // 7. Establish Charlie in the group along with other initial members
+                        let mut initial_members = vec![charlie_key_package.key_package().clone()];
+                        for i in 3..=initial_size {
+                            let (mem_cred, mem_signer) = generate_credential_with_key(
+                                format!("Member {}", i).into_bytes(),
+                                ciphersuite.signature_algorithm(),
+                                provider,
+                            );
+                            let kp =
+                                generate_key_package(ciphersuite, provider, &mem_signer, mem_cred);
+                            initial_members.push(kp.key_package().clone());
+                        }
+
+                        let (_, welcome_for_charlie, _) = alice_group
+                            .add_members(provider, &alice_signer, &initial_members)
+                            .unwrap();
+                        alice_group.merge_pending_commit(provider).unwrap();
+
+                        // 8. Create a staged welcome for Charlie.
+                        let welcome_msg: MlsMessageIn = welcome_for_charlie.into();
+                        let staged_welcome = StagedWelcome::new_from_welcome(
+                            provider,
+                            group_config.join_config(),
+                            welcome_msg.into_welcome().unwrap(),
+                            Some(alice_group.export_ratchet_tree().into()),
+                        );
+                        // 9. Convert the staged welcome into a group for Charlie.
+                        let charlie_group = staged_welcome
+                            .expect("Error creating staged welcome.")
+                            .into_group(provider)
+                            .unwrap();
+
+                        // 10. Create a commit for Charlie with Alice adding Bob to the group.
+                        let (commit_for_charlie, _, _) = alice_group
+                            .add_members(
+                                provider,
+                                &alice_signer,
+                                &[bob_key_package.key_package().clone()],
+                            )
+                            .unwrap();
+
+                        (charlie_group, commit_for_charlie)
+                    },
+                    |(mut existing_member_group, commit)| {
+                        // TIMED: Processing the commit message.
+                        let processed_message = existing_member_group
+                            .process_message(provider, commit.into_protocol_message().unwrap())
+                            .unwrap();
+
+                        if let ProcessedMessageContent::StagedCommitMessage(staged_commit) =
+                            processed_message.into_content()
+                        {
+                            existing_member_group
+                                .merge_staged_commit(provider, *staged_commit)
+                                .expect("Error merging staged commit");
+                        } else {
+                            panic!("Expected a StagedCommitMessage");
+                        }
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -427,6 +566,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     // ─── Objective 3 ─────────────────────────────────────────────────────
     benchmark_add_member_sender(c, provider);
     benchmark_add_member_receiver_new(c, provider);
+    benchmark_add_member_receiver_existing(c, provider);
     // ─── Objective 4 ─────────────────────────────────────────────────────
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
