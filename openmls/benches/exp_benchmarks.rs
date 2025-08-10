@@ -192,6 +192,118 @@ fn benchmark_group_creation(c: &mut Criterion) {
     group.finish();
 }
 
+// ─── 3. Member Addtion ───────────────────────────────────────────────────────
+// # Benchmark: Add Member (Sender)
+// * Objective: Measures the time for an existing group member to create a Commit that
+// * adds a new member to a group of size n.
+fn benchmark_add_member_sender(c: &mut Criterion) {
+    let mut group = c.benchmark_group("3.1. Member Addition (Sender)");
+    let provider = &OpenMlsRustCrypto::default();
+
+    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+        for &size in GROUP_SIZES {
+            // We are adding one member to a group of size-1 to reach size.
+            let initial_size = size - 1;
+            if initial_size == 0 {
+                continue;
+            } // Group must have at least one member.
+
+            let benchmark_id = BenchmarkId::new(
+                "AddMemberSender",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                // iter_batched with PerIteration is necessary because add_members modifies
+                // the internal state of the MlsGroup by creating a pending commit.
+                // Each run must start with a clean group state.
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a stable group of initial_size.
+                        // 1. Create Alice's credential and signer.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+
+                        // 2. Create the group configuration.
+                        let mls_group_create_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+
+                        // 3. Create the group.
+                        let mut alice_group = MlsGroup::new(
+                            provider,
+                            &alice_signer,
+                            &mls_group_create_config,
+                            alice_credential,
+                        )
+                        .unwrap();
+
+                        // 4. Add initial members.
+                        if initial_size > 1 {
+                            let mut key_packages_to_add = Vec::new();
+                            for i in 2..=initial_size {
+                                let (member_credential_with_key, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp_bundle = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential_with_key,
+                                );
+                                key_packages_to_add.push(kp_bundle.key_package().clone());
+                            }
+                            alice_group
+                                .add_members(provider, &alice_signer, &key_packages_to_add)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+                        }
+
+                        // 5. Create the KeyPackage for the new member (Bob) who will be added.
+                        let (bob_credential_with_key, bob_signer) = generate_credential_with_key(
+                            b"bob".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let bob_key_package = generate_key_package(
+                            ciphersuite,
+                            provider,
+                            &bob_signer,
+                            bob_credential_with_key,
+                        );
+
+                        (alice_group, alice_signer, bob_key_package)
+                    },
+                    |(mut group_creator, creator_signer, bob_key_package)| {
+                        // TIMED: The cost of creating the Commit and Welcome message.
+                        let _ = group_creator
+                            .add_members(
+                                provider,
+                                &creator_signer,
+                                &[bob_key_package.key_package().clone()],
+                            )
+                            .expect("Error adding member");
+
+                        // Merging the pending commit for the commit creator is
+                        // important to ensure that all changes are valid and applied.
+                        group_creator
+                            .merge_pending_commit(provider)
+                            .expect("Error merging commit after adding member.");
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     // ─── Objective 1 ─────────────────────────────────────────────────────
@@ -199,6 +311,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     // ─── Objective 2 ─────────────────────────────────────────────────────
     benchmark_group_creation(c);
     // ─── Objective 3 ─────────────────────────────────────────────────────
+    benchmark_add_member_sender(c);
     // ─── Objective 4 ─────────────────────────────────────────────────────
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
