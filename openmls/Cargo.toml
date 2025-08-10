@@ -111,3 +111,7 @@ openmls = { path = ".", features = ["test-utils"] }
 [[bench]]
 name = "benchmark"
 harness = false
+
+[[bench]]
+name = "exp_benchmarks"
+harness = false
