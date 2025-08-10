@@ -6,7 +6,8 @@ extern crate rand;
 use criterion::{BatchSize, BenchmarkId, Criterion};
 use openmls::prelude::*;
 use openmls_basic_credential::SignatureKeyPair;
-use openmls_rust_crypto::OpenMlsRustCrypto;
+use openmls_pqc_crypto::OpenMlsPqcProvider;
+// use openmls_rust_crypto::OpenMlsRustCrypto;
 use openmls_traits::OpenMlsProvider;
 
 // ─── Constants And Configuration ─────────────────────────────────────────────
@@ -1164,7 +1165,8 @@ fn benchmark_receive_application_message(c: &mut Criterion, provider: &impl Open
 
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
-    let provider = &OpenMlsRustCrypto::default();
+    // let provider = &OpenMlsRustCrypto::default();
+    let provider = &OpenMlsPqcProvider::default();
     // ─── Objective 1 ─────────────────────────────────────────────────────
     benchmark_key_package_creation(c, provider);
     // ─── Objective 2 ─────────────────────────────────────────────────────

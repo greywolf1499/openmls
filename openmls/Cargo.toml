@@ -14,6 +14,7 @@ exclude = ["/test_vectors"]
 [dependencies]
 openmls_traits = { workspace = true }
 openmls_rust_crypto = { workspace = true, optional = true }
+openmls_pqc_crypto = { workspace = true, optional = true }
 openmls_basic_credential = { workspace = true, optional = true, features = [
     "clonable",
     "test-utils",
@@ -49,6 +50,7 @@ test-utils = [
     "dep:serde_json",
     "dep:itertools",
     "openmls_rust_crypto/test-utils",
+    "openmls_pqc_crypto/test-utils",
     "dep:rand",
     "dep:wasm-bindgen-test",
     "dep:openmls_basic_credential",
