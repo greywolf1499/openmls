@@ -556,6 +556,86 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, provider: &impl Ope
     group.finish();
 }
 
+// ─── 4. Group Updates ────────────────────────────────────────────────────────
+// # Benchmark: Self-Update (Sender)
+// * Objective: Measures the time for a member in a group of size n to create a Commit
+// * message by updating their own leaf node using .self_update()
+fn benchmark_self_update_sender(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("4.1. Group Update (Sender - SelfUpdate)");
+
+    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+        for &size in GROUP_SIZES {
+            if size == 0 {
+                continue;
+            }
+
+            let benchmark_id = BenchmarkId::new(
+                "SelfUpdateSender",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a group with size members.
+                        // 1. Create Alice's credential and key package.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create the group configuration.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        // 3. Create the group.
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .expect("Error creating group for Alice.");
+
+                        // 4. Add members to the group.
+                        if size > 1 {
+                            let mut members_to_add = Vec::new();
+                            for i in 2..=size {
+                                let (member_credential, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential,
+                                );
+                                members_to_add.push(kp.key_package().clone());
+                            }
+                            alice_group
+                                .add_members(provider, &alice_signer, &members_to_add)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+                        }
+                        (alice_group, alice_signer)
+                    },
+                    |(mut alice_group, alice_signer)| {
+                        // TIMED: Perform the self-update.
+                        let (_commit, _, _) = alice_group
+                            .self_update(provider, &alice_signer, LeafNodeParameters::default())
+                            .expect("Error creating self-update commit.")
+                            .into_contents();
+                        alice_group
+                            .merge_pending_commit(provider)
+                            .expect("Error merging self-update commit.");
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -568,6 +648,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_add_member_receiver_new(c, provider);
     benchmark_add_member_receiver_existing(c, provider);
     // ─── Objective 4 ─────────────────────────────────────────────────────
+    benchmark_self_update_sender(c, provider);
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
 
