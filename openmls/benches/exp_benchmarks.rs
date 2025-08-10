@@ -832,6 +832,139 @@ fn benchmark_remove_member_sender(c: &mut Criterion, provider: &impl OpenMlsProv
     group.finish();
 }
 
+// # Benchmark: Remove Member (Receiver)
+// * Objective: Measures the time for a remaining group member to process a Commit
+// * that removes another member from a group of original size n.
+fn benchmark_remove_member_receiver(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("5.2. Member Removal (Receiver)");
+
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
+        for &size in GROUP_SIZES {
+            // Need at least 3 members: remover (Alice), removed (Charlie), and receiver (Bob).
+            if size < 3 {
+                continue;
+            }
+
+            let benchmark_id = BenchmarkId::new(
+                "RemoveMemberReceiver",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_with_setup(
+                    || {
+                        // SETUP: Create a stable group with two members, Alice (updater) and Bob (receiver).
+                        // Then, have Alice create a removal commit for Bob to process.
+
+                        // 1. Identities for Alice and Bob.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let (credential, bob_signer) = generate_credential_with_key(
+                            b"Bob".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        let bob_key_package =
+                            generate_key_package(ciphersuite, provider, &bob_signer, credential);
+
+                        // 2. Alice creates the group and adds Bob.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .expect("Error creating group for Alice.");
+
+                        let (_, welcome, _) = alice_group
+                            .add_members(
+                                provider,
+                                &alice_signer,
+                                &[bob_key_package.key_package().clone()],
+                            )
+                            .unwrap();
+                        alice_group.merge_pending_commit(provider).unwrap();
+
+                        // 3. Bob joins the group using the Welcome message.
+                        let welcome_msg: MlsMessageIn = welcome.into();
+                        let staged_welcome = StagedWelcome::new_from_welcome(
+                            provider,
+                            group_config.join_config(),
+                            welcome_msg.into_welcome().unwrap(),
+                            Some(alice_group.export_ratchet_tree().into()),
+                        )
+                        .unwrap();
+                        let mut bob_group = staged_welcome.into_group(provider).unwrap();
+
+                        // (If size > 2, add remaining members and have Bob process the commits to stay in sync)
+                        if size > 2 {
+                            let mut members_to_add = Vec::new();
+                            for i in 3..=size {
+                                let (member_credential, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential,
+                                );
+                                members_to_add.push(kp.key_package().clone());
+                            }
+                            let (commit, _, _) = alice_group
+                                .add_members(provider, &alice_signer, &members_to_add)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+
+                            let processed = bob_group
+                                .process_message(provider, commit.into_protocol_message().unwrap())
+                                .unwrap();
+                            if let ProcessedMessageContent::StagedCommitMessage(sc) =
+                                processed.into_content()
+                            {
+                                bob_group.merge_staged_commit(provider, *sc).unwrap();
+                            }
+                        }
+
+                        // 4. Alice removes the last member ("Charlie")
+                        let charlie_leaf_index = LeafNodeIndex::new((size - 1) as u32);
+                        let (commit_for_removal, _, _) = alice_group
+                            .remove_members(provider, &alice_signer, &[charlie_leaf_index])
+                            .unwrap();
+
+                        (bob_group, commit_for_removal)
+                    },
+                    |(mut bob_group, commit_for_removal)| {
+                        // TIMED: Bob processes the commit that removes another member.
+                        let processed = bob_group
+                            .process_message(
+                                provider,
+                                commit_for_removal.into_protocol_message().unwrap(),
+                            )
+                            .expect("Error processing removal commit.");
+
+                        if let ProcessedMessageContent::StagedCommitMessage(staged_commit) =
+                            processed.into_content()
+                        {
+                            bob_group
+                                .merge_staged_commit(provider, *staged_commit)
+                                .expect("Error merging staged commit.");
+                        } else {
+                            panic!("Expected a StagedCommitMessage");
+                        }
+                    },
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -848,6 +981,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_self_update_receiver(c, provider);
     // ─── Objective 5 ─────────────────────────────────────────────────────
     benchmark_remove_member_sender(c, provider);
+    benchmark_remove_member_receiver(c, provider);
 }
 
 // Register the benchmark group with Criterion.
