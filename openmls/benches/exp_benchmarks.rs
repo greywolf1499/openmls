@@ -7,13 +7,18 @@ use criterion::{BatchSize, BenchmarkId, Criterion};
 use openmls::prelude::*;
 use openmls_basic_credential::SignatureKeyPair;
 use openmls_rust_crypto::OpenMlsRustCrypto;
-use openmls_traits::{crypto::OpenMlsCrypto, OpenMlsProvider};
+use openmls_traits::OpenMlsProvider;
 
 // ─── Constants And Configuration ─────────────────────────────────────────────
 const GROUP_SIZES: &[usize] = &[2, 10, 50, 100];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500];
 // const GROUP_SIZES: &[usize] = &[500, 600, 700, 800, 900, 1000];
 // const GROUP_SIZES: &[usize] = &[100];
+
+const CIPHERSUITES_TO_TEST: &[Ciphersuite] = &[
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
+    Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
+];
 
 // ─── Helper Functions ────────────────────────────────────────────────────────
 // Function to generate a credential with a signature key pair.
@@ -53,12 +58,11 @@ fn generate_key_package(
 // # Benchmark: Key Package Creation
 // * Objective: Measures the time for a single user to generate their cryptographic identity
 // * and create a KeyPackageBundle. This captures the foundational per-user cost before joining any group.
-fn benchmark_key_package_creation(c: &mut Criterion) {
+fn benchmark_key_package_creation(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("1. Key Package Creation");
-    let provider = &OpenMlsRustCrypto::default();
 
     // Iterate over all supported ciphersuites to test each one.
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         // Use the ciphersuite name as a parameter for the benchmark ID.
         let benchmark_id = BenchmarkId::new("CreateBundle", format!("{:?}", ciphersuite));
 
@@ -100,11 +104,10 @@ fn benchmark_key_package_creation(c: &mut Criterion) {
 // # Benchmark: Group Creation
 // * Objective: Measures the total time to create a new n-member group, from the perspective
 // * of the group creator. This includes creating the group and sequentially adding all other members.
-fn benchmark_group_creation(c: &mut Criterion) {
+fn benchmark_group_creation(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("2. Group Creation");
-    let provider = &OpenMlsRustCrypto::default();
 
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         for &size in GROUP_SIZES {
             let benchmark_id = BenchmarkId::new(
                 "CreateGroup",
@@ -196,11 +199,10 @@ fn benchmark_group_creation(c: &mut Criterion) {
 // # Benchmark: Add Member (Sender)
 // * Objective: Measures the time for an existing group member to create a Commit that
 // * adds a new member to a group of size n.
-fn benchmark_add_member_sender(c: &mut Criterion) {
+fn benchmark_add_member_sender(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("3.1. Member Addition (Sender)");
-    let provider = &OpenMlsRustCrypto::default();
 
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         for &size in GROUP_SIZES {
             // We are adding one member to a group of size-1 to reach size.
             let initial_size = size - 1;
@@ -307,11 +309,10 @@ fn benchmark_add_member_sender(c: &mut Criterion) {
 // # Benchmark: Add Member (Receiver - New)
 // * Objective: Measures the time for a new member to process a Welcome message and
 // join a group, bringing it to size n.
-fn benchmark_add_member_receiver_new(c: &mut Criterion) {
+fn benchmark_add_member_receiver_new(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("3.2. Member Addition (Receiver - New Member)");
-    let provider = &OpenMlsRustCrypto::default();
 
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         for &size in GROUP_SIZES {
             if size < 2 {
                 continue;
@@ -418,13 +419,14 @@ fn benchmark_add_member_receiver_new(c: &mut Criterion) {
 
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
+    let provider = &OpenMlsRustCrypto::default();
     // ─── Objective 1 ─────────────────────────────────────────────────────
-    benchmark_key_package_creation(c);
+    benchmark_key_package_creation(c, provider);
     // ─── Objective 2 ─────────────────────────────────────────────────────
-    benchmark_group_creation(c);
+    benchmark_group_creation(c, provider);
     // ─── Objective 3 ─────────────────────────────────────────────────────
-    benchmark_add_member_sender(c);
-    benchmark_add_member_receiver_new(c);
+    benchmark_add_member_sender(c, provider);
+    benchmark_add_member_receiver_new(c, provider);
     // ─── Objective 4 ─────────────────────────────────────────────────────
     // ─── Objective 5 ─────────────────────────────────────────────────────
 }
