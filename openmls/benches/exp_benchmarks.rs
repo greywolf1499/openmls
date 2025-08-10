@@ -965,6 +965,86 @@ fn benchmark_remove_member_receiver(c: &mut Criterion, provider: &impl OpenMlsPr
     group.finish();
 }
 
+// ─── 6. Application Messaging ────────────────────────────────────────────────
+// # Benchmark: Send Application Message
+// * Objective: Measures the time it takes for a group member to create and encrypt an
+// * application message for a group of size n. This tests the "hot path" for sending data.
+// * Measure any impact of digital signature schemes on performance.
+fn benchmark_send_application_message(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("6.1. Application Message (Send)");
+
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
+        for &size in GROUP_SIZES {
+            if size == 0 {
+                continue;
+            }
+
+            let benchmark_id = BenchmarkId::new(
+                "SendMessage",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_with_setup(
+                    || {
+                        // SETUP: Create a stable group of size members.
+                        // We will measure the time it takes for the creator (Alice) to send a message.
+                        // 1. Create Alice's credential and key pair.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create the group configuration.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        // 3. Create the group.
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .unwrap();
+
+                        // 4. Add members to the group.
+                        if size > 1 {
+                            let mut members_to_add = Vec::new();
+                            for i in 2..=size {
+                                let (member_credential, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential,
+                                );
+                                members_to_add.push(kp.key_package().clone());
+                            }
+                            let (_, _welcome, _) = alice_group
+                                .add_members(provider, &alice_signer, &members_to_add)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+                        }
+
+                        // 5. Create the message payload.
+                        let message_payload = b"This is a test message.";
+                        (alice_group, alice_signer, message_payload)
+                    },
+                    |(mut alice_group, alice_signer, message_payload)| {
+                        // TIMED: The cost of deriving the key and encrypting the message.
+                        let _ = alice_group
+                            .create_message(provider, &alice_signer, message_payload)
+                            .expect("Error creating application message.");
+                    },
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -982,6 +1062,8 @@ fn run_all_benchmarks(c: &mut Criterion) {
     // ─── Objective 5 ─────────────────────────────────────────────────────
     benchmark_remove_member_sender(c, provider);
     benchmark_remove_member_receiver(c, provider);
+    // ─── Objective 6 ─────────────────────────────────────────────────────
+    benchmark_send_application_message(c, provider);
 }
 
 // Register the benchmark group with Criterion.
