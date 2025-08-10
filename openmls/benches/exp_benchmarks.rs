@@ -563,7 +563,7 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, provider: &impl Ope
 fn benchmark_self_update_sender(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("4.1. Group Update (Sender - SelfUpdate)");
 
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         for &size in GROUP_SIZES {
             if size == 0 {
                 continue;
@@ -642,7 +642,7 @@ fn benchmark_self_update_sender(c: &mut Criterion, provider: &impl OpenMlsProvid
 fn benchmark_self_update_receiver(c: &mut Criterion, provider: &impl OpenMlsProvider) {
     let mut group = c.benchmark_group("4.2. Group Update (Receiver - SelfUpdate)");
 
-    for &ciphersuite in provider.crypto().supported_ciphersuites().iter() {
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
         for &size in GROUP_SIZES {
             if size < 2 {
                 continue;
@@ -753,6 +753,85 @@ fn benchmark_self_update_receiver(c: &mut Criterion, provider: &impl OpenMlsProv
     group.finish();
 }
 
+// ─── 5. Member Removal ───────────────────────────────────────────────────────
+// # Benchmark: Remove Member (Sender)
+// * Objective: Measures the time for a member in a group of size n to create a Commit
+// * that removes another member from the group.
+fn benchmark_remove_member_sender(c: &mut Criterion, provider: &impl OpenMlsProvider) {
+    let mut group = c.benchmark_group("5.1. Member Removal (Sender)");
+
+    for &ciphersuite in CIPHERSUITES_TO_TEST.iter() {
+        for &size in GROUP_SIZES {
+            if size < 2 {
+                continue;
+            }
+
+            let benchmark_id = BenchmarkId::new(
+                "RemoveMemberSender",
+                format!("size={:04}, cs={:?}", size, ciphersuite),
+            );
+
+            group.bench_function(benchmark_id, move |b| {
+                b.iter_batched(
+                    || {
+                        // SETUP: Create a group with size members.
+                        // 1. Create Alice's key package.
+                        let (alice_credential, alice_signer) = generate_credential_with_key(
+                            b"Alice".to_vec(),
+                            ciphersuite.signature_algorithm(),
+                            provider,
+                        );
+                        // 2. Create the group.
+                        let group_config = MlsGroupCreateConfig::builder()
+                            .ciphersuite(ciphersuite)
+                            .build();
+                        let mut alice_group =
+                            MlsGroup::new(provider, &alice_signer, &group_config, alice_credential)
+                                .expect("Error creating group for Alice.");
+
+                        // 3. Add initial members.
+                        if size > 1 {
+                            let mut members_to_add = Vec::new();
+                            for i in 2..=size {
+                                let (member_credential, member_signer) =
+                                    generate_credential_with_key(
+                                        format!("Member {}", i).into_bytes(),
+                                        ciphersuite.signature_algorithm(),
+                                        provider,
+                                    );
+                                let kp = generate_key_package(
+                                    ciphersuite,
+                                    provider,
+                                    &member_signer,
+                                    member_credential,
+                                );
+                                members_to_add.push(kp.key_package().clone());
+                            }
+                            alice_group
+                                .add_members(provider, &alice_signer, &members_to_add)
+                                .unwrap();
+                            alice_group.merge_pending_commit(provider).unwrap();
+                        }
+                        // 4. Select the last member to remove.
+                        let leaf_index_to_remove = LeafNodeIndex::new((size - 1) as u32);
+                        (alice_group, alice_signer, leaf_index_to_remove)
+                    },
+                    |(mut alice_group, alice_signer, leaf_index_to_remove)| {
+                        alice_group
+                            .remove_members(provider, &alice_signer, &[leaf_index_to_remove])
+                            .expect("Error removing member.");
+                        alice_group
+                            .merge_pending_commit(provider)
+                            .expect("Error merging removal commit.");
+                    },
+                    BatchSize::PerIteration,
+                );
+            });
+        }
+    }
+    group.finish();
+}
+
 // ─── Benchmark Runner ────────────────────────────────────────────────────────
 fn run_all_benchmarks(c: &mut Criterion) {
     let provider = &OpenMlsRustCrypto::default();
@@ -768,6 +847,7 @@ fn run_all_benchmarks(c: &mut Criterion) {
     benchmark_self_update_sender(c, provider);
     benchmark_self_update_receiver(c, provider);
     // ─── Objective 5 ─────────────────────────────────────────────────────
+    benchmark_remove_member_sender(c, provider);
 }
 
 // Register the benchmark group with Criterion.
