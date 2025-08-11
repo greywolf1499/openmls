@@ -12,6 +12,8 @@ readme = "README.md"
 [dependencies]
 openmls_traits = { workspace = true }
 tls_codec = { workspace = true }
+ml-dsa = { workspace = true }
+slh-dsa = { workspace = true }
 serde = "1.0"
 
 # Rust Crypto

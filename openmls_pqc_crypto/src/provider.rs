@@ -26,6 +26,20 @@ use rand::{RngCore, SeedableRng};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tls_codec::SecretVLBytes;
 
+// PQC Crates
+use ml_dsa::{
+    EncodedSignature as MlDsaEncodedSignature, EncodedSigningKey as MlDsaEncodedSigningKey,
+    EncodedVerifyingKey as MlDsaEncodedVerifyingKey, KeyGen, MlDsa44, MlDsa65, MlDsa87,
+    MlDsaParams, Signature as MlDsaSignature, SigningKey as MlDsaSigningKey,
+    VerifyingKey as MlDsaVerifyingKey,
+    signature::{Signer as MlDsaSigner, Verifier as MlDsaVerifier},
+};
+use slh_dsa::{
+    ParameterSet, Shake128f, Signature as SlhDsaSignature, SigningKey as SlhDsaSigningKey,
+    VerifyingKey as SlhDsaVerifyingKey,
+    signature::{Keypair as SlhDsaKeypair, Signer as SlhDsaSigner, Verifier as SlhDsaVerifier},
+};
+
 #[derive(Debug)]
 pub struct PqcCrypto {
     rng: RwLock<rand_chacha::ChaCha20Rng>,
@@ -46,6 +60,74 @@ impl Default for PqcCrypto {
             rng: RwLock::new(rand_chacha::ChaCha20Rng::from_entropy()),
         }
     }
+}
+
+// Parameterized MLDSA functions
+fn ml_dsa_key_gen<P: MlDsaParams>(rng: &mut rand_chacha::ChaCha20Rng) -> (Vec<u8>, Vec<u8>) {
+    let kp = P::key_gen(&mut *rng);
+    let sk = kp.signing_key();
+    let pk = kp.verifying_key();
+    let sk_bytes = sk.encode();
+    let pk_bytes = pk.encode();
+    let sk_vec = sk_bytes.as_slice().to_vec();
+    let pk_vec = pk_bytes.as_slice().to_vec();
+    (sk_vec, pk_vec)
+}
+
+fn ml_dsa_verify_signature<P: MlDsaParams>(
+    data: &[u8],
+    pk: &[u8],
+    signature: &[u8],
+) -> Result<(), CryptoError> {
+    let pk_bytes = MlDsaEncodedVerifyingKey::<P>::try_from(pk).unwrap();
+    let pk = MlDsaVerifyingKey::<P>::decode(&pk_bytes);
+    let signature_bytes = MlDsaEncodedSignature::<P>::try_from(signature)
+        .map_err(|_| CryptoError::CryptoLibraryError)?;
+    let signature =
+        MlDsaSignature::<P>::decode(&signature_bytes).expect("Failed to decode MLDSA signature");
+    pk.verify(data, &signature)
+        .map_err(|_| CryptoError::InvalidSignature)
+}
+
+fn ml_dsa_sign<P: MlDsaParams>(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let sk_bytes =
+        MlDsaEncodedSigningKey::<P>::try_from(key).map_err(|_| CryptoError::CryptoLibraryError)?;
+    let sk = MlDsaSigningKey::<P>::decode(&sk_bytes);
+    let signature = sk.sign(data);
+    let sig_bytes = signature.encode();
+    let sig_vec = sig_bytes.as_slice().to_vec();
+    Ok(sig_vec)
+}
+
+// Parameterized SLHDSA functions
+fn slh_dsa_key_gen<P: ParameterSet>(rng: &mut rand_chacha::ChaCha20Rng) -> (Vec<u8>, Vec<u8>) {
+    let sk = SlhDsaSigningKey::<P>::new(rng);
+    let pk = sk.verifying_key();
+    let sk_vec = sk.to_vec();
+    let pk_vec = pk.to_vec();
+    (sk_vec, pk_vec)
+}
+
+fn slh_dsa_verify<P: ParameterSet>(
+    data: &[u8],
+    key: &[u8],
+    signature: &[u8],
+) -> Result<(), CryptoError> {
+    let pk_deserialized =
+        SlhDsaVerifyingKey::<P>::try_from(key).expect("Failed to decode SLHDSA verifying key");
+    let signature_deserialized =
+        SlhDsaSignature::<P>::try_from(signature).expect("Failed to decode SLHDSA signature");
+    pk_deserialized
+        .verify(data, &signature_deserialized)
+        .map_err(|_| CryptoError::InvalidSignature)
+}
+
+fn slh_dsa_sign<P: ParameterSet>(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let sk_deserialized =
+        SlhDsaSigningKey::<P>::try_from(key).expect("Failed to decode SLHDSA signing key");
+    let signature = sk_deserialized.sign(data);
+    let signature_vec = signature.to_vec();
+    Ok(signature_vec)
 }
 
 #[inline(always)]
@@ -86,7 +168,22 @@ impl OpenMlsCrypto for PqcCrypto {
         match ciphersuite {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
             | Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
-            | Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256 => Ok(()),
+            | Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA65
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA87
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_128F => Ok(()),
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_128S
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_192F
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_192S
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_256F
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_256S
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_128F
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_128S
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_192F
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_192S
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_256F
+            // | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_256S => Ok(()),
             _ => Err(CryptoError::UnsupportedCiphersuite),
         }
     }
@@ -96,6 +193,21 @@ impl OpenMlsCrypto for PqcCrypto {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA65,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA87,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_128F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_128S,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_192F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_192S,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_256F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHA2_256S,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_128F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_128S,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_192F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_192S,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_256F,
+            // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SLHDSA_SHAKE_256S,
         ]
     }
 
@@ -250,6 +362,38 @@ impl OpenMlsCrypto for PqcCrypto {
                 let pk = sk.verifying_key().to_bytes().into();
                 Ok((sk.to_bytes().into(), pk))
             }
+            SignatureScheme::MLDSA44 => {
+                let mut rng = self
+                    .rng
+                    .write()
+                    .map_err(|_| CryptoError::InsufficientRandomness)?;
+                let (sk_vec, pk_vec) = ml_dsa_key_gen::<MlDsa44>(&mut *rng);
+                Ok((sk_vec, pk_vec))
+            }
+            SignatureScheme::MLDSA65 => {
+                let mut rng = self
+                    .rng
+                    .write()
+                    .map_err(|_| CryptoError::InsufficientRandomness)?;
+                let (sk_vec, pk_vec) = ml_dsa_key_gen::<MlDsa65>(&mut *rng);
+                Ok((sk_vec, pk_vec))
+            }
+            SignatureScheme::MLDSA87 => {
+                let mut rng = self
+                    .rng
+                    .write()
+                    .map_err(|_| CryptoError::InsufficientRandomness)?;
+                let (sk_vec, pk_vec) = ml_dsa_key_gen::<MlDsa87>(&mut *rng);
+                Ok((sk_vec, pk_vec))
+            }
+            SignatureScheme::SLHDSA_SHA2_128F => {
+                let mut rng = self
+                    .rng
+                    .write()
+                    .map_err(|_| CryptoError::InsufficientRandomness)?;
+                let (sk_vec, pk_vec) = slh_dsa_key_gen::<Shake128f>(&mut *rng);
+                Ok((sk_vec, pk_vec))
+            }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -284,6 +428,14 @@ impl OpenMlsCrypto for PqcCrypto {
                 k.verify_strict(data, &ed25519_dalek::Signature::from(sig))
                     .map_err(|_| CryptoError::InvalidSignature)
             }
+            SignatureScheme::MLDSA44 => ml_dsa_verify_signature::<MlDsa44>(data, pk, signature)
+                .map_err(|_| CryptoError::InvalidSignature),
+            SignatureScheme::MLDSA65 => ml_dsa_verify_signature::<MlDsa65>(data, pk, signature)
+                .map_err(|_| CryptoError::InvalidSignature),
+            SignatureScheme::MLDSA87 => ml_dsa_verify_signature::<MlDsa87>(data, pk, signature)
+                .map_err(|_| CryptoError::InvalidSignature),
+            SignatureScheme::SLHDSA_SHA2_128F => slh_dsa_verify::<Shake128f>(data, pk, signature)
+                .map_err(|_| CryptoError::InvalidSignature),
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -307,6 +459,10 @@ impl OpenMlsCrypto for PqcCrypto {
                 let signature = k.sign(data);
                 Ok(signature.to_bytes().into())
             }
+            SignatureScheme::MLDSA44 => ml_dsa_sign::<MlDsa44>(data, key),
+            SignatureScheme::MLDSA65 => ml_dsa_sign::<MlDsa65>(data, key),
+            SignatureScheme::MLDSA87 => ml_dsa_sign::<MlDsa87>(data, key),
+            SignatureScheme::SLHDSA_SHA2_128F => slh_dsa_sign::<Shake128f>(data, key),
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }

@@ -12,11 +12,58 @@ use openmls_traits::{
     types::{CryptoError, SignatureScheme},
 };
 
+use ml_dsa::{
+    signature::{Signer as MlDsaSigner, Verifier as MlDsaVerifier},
+    EncodedSignature as MlDsaEncodedSignature, EncodedSigningKey as MlDsaEncodedSigningKey,
+    EncodedVerifyingKey as MlDsaEncodedVerifyingKey, KeyGen, MlDsa44, MlDsa65, MlDsa87,
+    MlDsaParams, Signature as MlDsaSignature, SigningKey as MlDsaSigningKey,
+    VerifyingKey as MlDsaVerifyingKey,
+};
 use p256::ecdsa::{signature::Signer as P256Signer, Signature, SigningKey};
+use slh_dsa::{
+    signature::{Keypair as SlhDsaKeypair, Signer as SlhDsaSigner, Verifier as SlhDsaVerifier},
+    ParameterSet, Shake128f, Shake128s, Shake192f, Signature as SlhDsaSignature,
+    SigningKey as SlhDsaSigningKey, VerifyingKey as SlhDsaVerifyingKey,
+};
 
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use tls_codec::{TlsDeserialize, TlsDeserializeBytes, TlsSerialize, TlsSize};
+
+// Parameterized MLDSA functions
+fn ml_dsa_key_gen<P: MlDsaParams>(rng: &mut OsRng) -> (Vec<u8>, Vec<u8>) {
+    let kp = P::key_gen(rng);
+    let sk_bytes = kp.signing_key().encode();
+    let pk_bytes = kp.verifying_key().encode();
+    (sk_bytes.as_slice().to_vec(), pk_bytes.as_slice().to_vec())
+}
+
+fn ml_dsa_sign<P: MlDsaParams>(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let sk_bytes =
+        MlDsaEncodedSigningKey::<P>::try_from(key).expect("Failed to decode MLDSA signing key");
+    let sk = MlDsaSigningKey::<P>::decode(&sk_bytes);
+    let signature = sk.sign(data);
+    let signature_bytes = signature.encode();
+    let signature_vec = signature_bytes.as_slice().to_vec();
+    Ok(signature_vec)
+}
+
+// Parameterized SLHDSA functions
+fn slh_dsa_key_gen<P: ParameterSet>(rng: &mut OsRng) -> (Vec<u8>, Vec<u8>) {
+    let sk = SlhDsaSigningKey::<P>::new(rng);
+    let pk = sk.verifying_key();
+    let sk_vec = sk.to_vec();
+    let pk_vec = pk.to_vec();
+    (sk_vec, pk_vec)
+}
+
+fn slh_dsa_sign<P: ParameterSet>(data: &[u8], key: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    let sk_deserialized =
+        SlhDsaSigningKey::<P>::try_from(key).expect("Failed to decode SLHDSA signing key");
+    let signature = sk_deserialized.sign(data);
+    let signature_vec = signature.to_vec();
+    Ok(signature_vec)
+}
 
 /// A signature key pair for the basic credential.
 ///
@@ -57,6 +104,26 @@ impl Signer for SignatureKeyPair {
                 let signature = k.sign(payload);
                 Ok(signature.to_bytes().into())
             }
+            SignatureScheme::MLDSA44 => {
+                let signature = ml_dsa_sign::<MlDsa44>(payload, self.private.as_slice())
+                    .map_err(|_| SignerError::SigningError)?;
+                Ok(signature)
+            }
+            SignatureScheme::MLDSA65 => {
+                let signature = ml_dsa_sign::<MlDsa65>(payload, self.private.as_slice())
+                    .map_err(|_| SignerError::SigningError)?;
+                Ok(signature)
+            }
+            SignatureScheme::MLDSA87 => {
+                let signature = ml_dsa_sign::<MlDsa87>(payload, self.private.as_slice())
+                    .map_err(|_| SignerError::SigningError)?;
+                Ok(signature)
+            }
+            SignatureScheme::SLHDSA_SHA2_128F => {
+                let signature = slh_dsa_sign::<Shake128f>(payload, self.private.as_slice())
+                    .map_err(|_| SignerError::SigningError)?;
+                Ok(signature)
+            }
             _ => Err(SignerError::SigningError),
         }
     }
@@ -89,6 +156,22 @@ impl SignatureKeyPair {
                 let sk = ed25519_dalek::SigningKey::generate(&mut OsRng);
                 let pk = sk.verifying_key().to_bytes().into();
                 (sk.to_bytes().into(), pk)
+            }
+            SignatureScheme::MLDSA44 => {
+                let (private, public) = ml_dsa_key_gen::<MlDsa44>(&mut OsRng);
+                (private, public)
+            }
+            SignatureScheme::MLDSA65 => {
+                let (private, public) = ml_dsa_key_gen::<MlDsa65>(&mut OsRng);
+                (private, public)
+            }
+            SignatureScheme::MLDSA87 => {
+                let (private, public) = ml_dsa_key_gen::<MlDsa87>(&mut OsRng);
+                (private, public)
+            }
+            SignatureScheme::SLHDSA_SHA2_128F => {
+                let (private, public) = slh_dsa_key_gen::<Shake128f>(&mut OsRng);
+                (private, public)
             }
             _ => return Err(CryptoError::UnsupportedSignatureScheme),
         };

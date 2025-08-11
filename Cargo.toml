@@ -20,6 +20,8 @@ resolver = "2"
 # Central dependency management for some crates
 [workspace.dependencies]
 tls_codec = { version = "0.4.2", features = ["derive", "serde", "mls"] }
+ml-dsa = "0.0.4"
+slh-dsa = "0.0.3"
 
 openmls = { version = "0.7.0", path = "openmls" }
 
