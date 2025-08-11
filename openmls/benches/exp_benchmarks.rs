@@ -14,10 +14,12 @@ use openmls_traits::OpenMlsProvider;
 // const GROUP_SIZES: &[usize] = &[2, 10, 50, 100];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500];
 // const GROUP_SIZES: &[usize] = &[500, 600, 700, 800, 900, 1000];
-const GROUP_SIZES: &[usize] = &[100];
+const GROUP_SIZES: &[usize] = &[1000];
 
 const CIPHERSUITES_TO_TEST: &[Ciphersuite] = &[
-    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
+    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
+    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
     // Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
 ];
 

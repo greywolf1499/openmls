@@ -12,11 +12,38 @@ use openmls_traits::{
     types::{CryptoError, SignatureScheme},
 };
 
+use oqs::{init as oqs_init, sig};
 use p256::ecdsa::{signature::Signer as P256Signer, Signature, SigningKey};
 
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use tls_codec::{TlsDeserialize, TlsDeserializeBytes, TlsSerialize, TlsSize};
+
+// Generic OQS functions
+fn oqs_generate_keypair(algorithm: sig::Algorithm) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
+    oqs_init();
+    let sigalg = sig::Sig::new(algorithm).map_err(|_| CryptoError::UnsupportedSignatureScheme)?;
+    let (pk, sk) = sigalg
+        .keypair()
+        .map_err(|_| CryptoError::UnsupportedSignatureScheme)?;
+    Ok((sk.into_vec(), pk.into_vec()))
+}
+
+fn oqs_sign(
+    algorithm: sig::Algorithm,
+    private: &[u8],
+    payload: &[u8],
+) -> Result<Vec<u8>, SignerError> {
+    oqs_init();
+    let sigalg = sig::Sig::new(algorithm).map_err(|_| SignerError::SigningError)?;
+    let sk = sigalg
+        .secret_key_from_bytes(private)
+        .ok_or(SignerError::SigningError)?;
+    let signature = sigalg
+        .sign(payload, sk)
+        .map_err(|_| SignerError::SigningError)?;
+    Ok(signature.into_vec())
+}
 
 /// A signature key pair for the basic credential.
 ///
@@ -57,6 +84,16 @@ impl Signer for SignatureKeyPair {
                 let signature = k.sign(payload);
                 Ok(signature.to_bytes().into())
             }
+            SignatureScheme::MLDSA44 => {
+                oqs_sign(sig::Algorithm::MlDsa44, self.private.as_slice(), payload)
+                    .map_err(|_| SignerError::SigningError)
+            }
+            SignatureScheme::SPHINCS_SHA2_128F => oqs_sign(
+                sig::Algorithm::SphincsSha2128fSimple,
+                self.private.as_slice(),
+                payload,
+            )
+            .map_err(|_| SignerError::SigningError),
             _ => Err(SignerError::SigningError),
         }
     }
@@ -89,6 +126,15 @@ impl SignatureKeyPair {
                 let sk = ed25519_dalek::SigningKey::generate(&mut OsRng);
                 let pk = sk.verifying_key().to_bytes().into();
                 (sk.to_bytes().into(), pk)
+            }
+            SignatureScheme::MLDSA44 => {
+                let (private, public) = oqs_generate_keypair(sig::Algorithm::MlDsa44)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_128F => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2128fSimple)?;
+                (private, public)
             }
             _ => return Err(CryptoError::UnsupportedSignatureScheme),
         };

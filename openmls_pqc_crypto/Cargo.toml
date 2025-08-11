@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 openmls_traits = { workspace = true }
 openmls_memory_storage = { workspace = true }
+oqs = { workspace = true }
 
 hpke = { version = "0.3.0-alpha.2", package = "hpke-rs", default-features = false, features = [
     "hazmat",

@@ -18,6 +18,7 @@ use openmls_traits::{
         HpkeCiphertext, HpkeConfig, HpkeKdfType, HpkeKemType, HpkeKeyPair, SignatureScheme,
     },
 };
+use oqs::{init as oqs_init, sig};
 use p256::{
     EncodedPoint,
     ecdsa::{Signature, SigningKey, VerifyingKey, signature::Verifier},
@@ -25,6 +26,58 @@ use p256::{
 use rand::{RngCore, SeedableRng};
 use sha2::{Digest, Sha256, Sha384, Sha512};
 use tls_codec::SecretVLBytes;
+
+// Parametrized OQS signature functions
+fn oqs_generate_keypair(algorithm: sig::Algorithm) -> Result<(Vec<u8>, Vec<u8>), CryptoError> {
+    oqs_init();
+    let sigalg = sig::Sig::new(algorithm).map_err(|_| CryptoError::CryptoLibraryError)?;
+
+    let (pk, sk) = sigalg
+        .keypair()
+        .map_err(|_| CryptoError::CryptoLibraryError)?;
+
+    let pk_bytes = pk.into_vec();
+    let sk_bytes = sk.into_vec();
+
+    Ok((sk_bytes, pk_bytes))
+}
+
+fn oqs_sign(algorithm: sig::Algorithm, key: &[u8], data: &[u8]) -> Result<Vec<u8>, CryptoError> {
+    oqs_init();
+    let sigalg = sig::Sig::new(algorithm).map_err(|_| CryptoError::CryptoLibraryError)?;
+
+    let sk = sigalg
+        .secret_key_from_bytes(key)
+        .ok_or(CryptoError::CryptoLibraryError)?;
+
+    let signature = sigalg
+        .sign(data, sk)
+        .map_err(|_| CryptoError::CryptoLibraryError)?;
+
+    Ok(signature.into_vec())
+}
+
+fn oqs_verify(
+    algorithm: sig::Algorithm,
+    pk: &[u8],
+    signature: &[u8],
+    data: &[u8],
+) -> Result<(), CryptoError> {
+    oqs_init();
+    let sigalg = sig::Sig::new(algorithm).map_err(|_| CryptoError::CryptoLibraryError)?;
+
+    let pk = sigalg
+        .public_key_from_bytes(pk)
+        .ok_or(CryptoError::CryptoLibraryError)?;
+
+    let signature = sigalg
+        .signature_from_bytes(signature)
+        .ok_or(CryptoError::CryptoLibraryError)?;
+
+    sigalg
+        .verify(data, signature, pk)
+        .map_err(|_| CryptoError::InvalidSignature)
+}
 
 #[derive(Debug)]
 pub struct PqcCrypto {
@@ -86,7 +139,9 @@ impl OpenMlsCrypto for PqcCrypto {
         match ciphersuite {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
             | Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
-            | Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256 => Ok(()),
+            | Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F => Ok(()),
             _ => Err(CryptoError::UnsupportedCiphersuite),
         }
     }
@@ -96,6 +151,8 @@ impl OpenMlsCrypto for PqcCrypto {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
         ]
     }
 
@@ -250,6 +307,16 @@ impl OpenMlsCrypto for PqcCrypto {
                 let pk = sk.verifying_key().to_bytes().into();
                 Ok((sk.to_bytes().into(), pk))
             }
+            SignatureScheme::MLDSA44 => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::MlDsa44)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_128F => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2128fSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -284,6 +351,16 @@ impl OpenMlsCrypto for PqcCrypto {
                 k.verify_strict(data, &ed25519_dalek::Signature::from(sig))
                     .map_err(|_| CryptoError::InvalidSignature)
             }
+            SignatureScheme::MLDSA44 => {
+                oqs_verify(sig::Algorithm::MlDsa44, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_128F => {
+                oqs_verify(sig::Algorithm::SphincsSha2128fSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -306,6 +383,16 @@ impl OpenMlsCrypto for PqcCrypto {
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
                 let signature = k.sign(data);
                 Ok(signature.to_bytes().into())
+            }
+            SignatureScheme::MLDSA44 => {
+                let signature = oqs_sign(sig::Algorithm::MlDsa44, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_128F => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2128fSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
             }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
