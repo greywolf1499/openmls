@@ -84,6 +84,7 @@ impl Signer for SignatureKeyPair {
                 let signature = k.sign(payload);
                 Ok(signature.to_bytes().into())
             }
+            // NIST Security Level 1 Schemes
             SignatureScheme::MLDSA44 => {
                 oqs_sign(sig::Algorithm::MlDsa44, self.private.as_slice(), payload)
                     .map_err(|_| SignerError::SigningError)
@@ -92,8 +93,54 @@ impl Signer for SignatureKeyPair {
                 sig::Algorithm::SphincsSha2128fSimple,
                 self.private.as_slice(),
                 payload,
+            ),
+            SignatureScheme::SPHINCS_SHA2_128S => oqs_sign(
+                sig::Algorithm::SphincsSha2128sSimple,
+                self.private.as_slice(),
+                payload,
+            ),
+            SignatureScheme::FALCON_512 => {
+                oqs_sign(sig::Algorithm::Falcon512, self.private.as_slice(), payload)
+                    .map_err(|_| SignerError::SigningError)
+            }
+            // NIST Security Level 3 Schemes
+            SignatureScheme::MLDSA65 => {
+                oqs_sign(sig::Algorithm::MlDsa65, self.private.as_slice(), payload)
+                    .map_err(|_| SignerError::SigningError)
+            }
+            SignatureScheme::SPHINCS_SHA2_192F => oqs_sign(
+                sig::Algorithm::SphincsSha2192fSimple,
+                self.private.as_slice(),
+                payload,
             )
             .map_err(|_| SignerError::SigningError),
+            SignatureScheme::SPHINCS_SHA2_192S => oqs_sign(
+                sig::Algorithm::SphincsSha2192sSimple,
+                self.private.as_slice(),
+                payload,
+            )
+            .map_err(|_| SignerError::SigningError),
+            // NIST Security Level 5 Schemes
+            SignatureScheme::MLDSA87 => {
+                oqs_sign(sig::Algorithm::MlDsa87, self.private.as_slice(), payload)
+                    .map_err(|_| SignerError::SigningError)
+            }
+            SignatureScheme::SPHINCS_SHA2_256F => oqs_sign(
+                sig::Algorithm::SphincsSha2256fSimple,
+                self.private.as_slice(),
+                payload,
+            )
+            .map_err(|_| SignerError::SigningError),
+            SignatureScheme::SPHINCS_SHA2_256S => oqs_sign(
+                sig::Algorithm::SphincsSha2256sSimple,
+                self.private.as_slice(),
+                payload,
+            )
+            .map_err(|_| SignerError::SigningError),
+            SignatureScheme::FALCON_1024 => {
+                oqs_sign(sig::Algorithm::Falcon1024, self.private.as_slice(), payload)
+                    .map_err(|_| SignerError::SigningError)
+            }
             _ => Err(SignerError::SigningError),
         }
     }
@@ -127,6 +174,7 @@ impl SignatureKeyPair {
                 let pk = sk.verifying_key().to_bytes().into();
                 (sk.to_bytes().into(), pk)
             }
+            // NIST Security Level 1 Schemes
             SignatureScheme::MLDSA44 => {
                 let (private, public) = oqs_generate_keypair(sig::Algorithm::MlDsa44)?;
                 (private, public)
@@ -134,6 +182,49 @@ impl SignatureKeyPair {
             SignatureScheme::SPHINCS_SHA2_128F => {
                 let (private, public) =
                     oqs_generate_keypair(sig::Algorithm::SphincsSha2128fSimple)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_128S => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2128sSimple)?;
+                (private, public)
+            }
+            SignatureScheme::FALCON_512 => {
+                let (private, public) = oqs_generate_keypair(sig::Algorithm::Falcon512)?;
+                (private, public)
+            }
+            // NIST Security Level 3 Schemes
+            SignatureScheme::MLDSA65 => {
+                let (private, public) = oqs_generate_keypair(sig::Algorithm::MlDsa65)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_192F => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2192fSimple)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_192S => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2192sSimple)?;
+                (private, public)
+            }
+            // NIST Security Level 5 Schemes
+            SignatureScheme::MLDSA87 => {
+                let (private, public) = oqs_generate_keypair(sig::Algorithm::MlDsa87)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_256F => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2256fSimple)?;
+                (private, public)
+            }
+            SignatureScheme::SPHINCS_SHA2_256S => {
+                let (private, public) =
+                    oqs_generate_keypair(sig::Algorithm::SphincsSha2256sSimple)?;
+                (private, public)
+            }
+            SignatureScheme::FALCON_1024 => {
+                let (private, public) = oqs_generate_keypair(sig::Algorithm::Falcon1024)?;
                 (private, public)
             }
             _ => return Err(CryptoError::UnsupportedSignatureScheme),

@@ -12,18 +12,22 @@ use openmls_traits::OpenMlsProvider;
 use std::time::Instant;
 
 // ─── Constants And Configuration ─────────────────────────────────────────────
-const GROUP_SIZES: &[usize] = &[2, 10, 50, 100];
+// const GROUP_SIZES: &[usize] = &[2, 10, 50];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500];
 // const GROUP_SIZES: &[usize] = &[500, 600, 700, 800, 900, 1000];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
-// const GROUP_SIZES: &[usize] = &[1000];
+const GROUP_SIZES: &[usize] = &[1000];
 
 const CIPHERSUITES_TO_TEST: &[Ciphersuite] = &[
+    // Classic Default MLS Ciphersuites
     // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
-    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
-    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
     // Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
-    Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
+    // Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
+    // NIST Level 1 Ciphersuites
+    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
+    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S,
+    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
 ];
 
 const MAX_GROUP_SIZE: usize = 1000;
@@ -160,7 +164,6 @@ fn benchmark_group_creation(c: &mut Criterion, fixture: &BenchmarkFixture) {
             b.iter_batched(
                 || {
                     // SETUP: This part is not timed.
-
                     // 1. Creator's (Alice's) identity.
                     let (alice_credential_with_key, alice_signer, _) =
                         create_member(ciphersuite, &fixture.provider, b"alice_creator");
@@ -178,12 +181,11 @@ fn benchmark_group_creation(c: &mut Criterion, fixture: &BenchmarkFixture) {
                         .take(size - 1)
                         .map(|kb| kb.key_package().clone())
                         .collect();
-
                     (
-                        alice_signer,
-                        mls_group_create_config,
-                        alice_credential_with_key,
-                        member_key_packages,
+                        alice_signer.clone(),
+                        mls_group_create_config.clone(),
+                        alice_credential_with_key.clone(),
+                        member_key_packages.clone(),
                     )
                 },
                 |(
@@ -486,6 +488,8 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, fixture: &Benchmark
                             &[bob_key_package.key_package().clone()],
                         )
                         .unwrap();
+
+                    alice_group.merge_pending_commit(&fixture.provider).unwrap();
 
                     // 9. Return Charlie's group and the commit he needs to process.
                     (charlie_group, commit_to_process)

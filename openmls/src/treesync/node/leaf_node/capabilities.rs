@@ -295,8 +295,11 @@ pub(super) fn default_ciphersuites() -> Vec<Ciphersuite> {
         Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
         Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
         Ciphersuite::MLS_256_XWING_CHACHA20POLY1305_SHA256_Ed25519,
+        // NIST Level 1 Ciphersuites
         Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
         Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
+        Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S,
+        Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
     ]
 }
 

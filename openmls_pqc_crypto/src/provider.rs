@@ -140,8 +140,11 @@ impl OpenMlsCrypto for PqcCrypto {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519
             | Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519
             | Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256
+            // NIST Security Level 1 Ciphersuites
             | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44
-            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F => Ok(()),
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512 => Ok(()),
             _ => Err(CryptoError::UnsupportedCiphersuite),
         }
     }
@@ -151,8 +154,11 @@ impl OpenMlsCrypto for PqcCrypto {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
             Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
+            // NIST Security Level 1 Ciphersuites
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
         ]
     }
 
@@ -307,6 +313,7 @@ impl OpenMlsCrypto for PqcCrypto {
                 let pk = sk.verifying_key().to_bytes().into();
                 Ok((sk.to_bytes().into(), pk))
             }
+            // NIST Security Level 1 Signature Schemes
             SignatureScheme::MLDSA44 => {
                 let (sk, pk) = oqs_generate_keypair(sig::Algorithm::MlDsa44)
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
@@ -314,6 +321,16 @@ impl OpenMlsCrypto for PqcCrypto {
             }
             SignatureScheme::SPHINCS_SHA2_128F => {
                 let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2128fSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_128S => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2128sSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::FALCON_512 => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::Falcon512)
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
                 Ok((sk.into(), pk.into()))
             }
@@ -351,6 +368,7 @@ impl OpenMlsCrypto for PqcCrypto {
                 k.verify_strict(data, &ed25519_dalek::Signature::from(sig))
                     .map_err(|_| CryptoError::InvalidSignature)
             }
+            // NIST Security Level 1 Signature Schemes
             SignatureScheme::MLDSA44 => {
                 oqs_verify(sig::Algorithm::MlDsa44, pk, signature, data)
                     .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
@@ -358,6 +376,16 @@ impl OpenMlsCrypto for PqcCrypto {
             }
             SignatureScheme::SPHINCS_SHA2_128F => {
                 oqs_verify(sig::Algorithm::SphincsSha2128fSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_128S => {
+                oqs_verify(sig::Algorithm::SphincsSha2128sSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::FALCON_512 => {
+                oqs_verify(sig::Algorithm::Falcon512, pk, signature, data)
                     .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
                 Ok(())
             }
@@ -384,6 +412,7 @@ impl OpenMlsCrypto for PqcCrypto {
                 let signature = k.sign(data);
                 Ok(signature.to_bytes().into())
             }
+            // NIST Security Level 1 Signature Schemes
             SignatureScheme::MLDSA44 => {
                 let signature = oqs_sign(sig::Algorithm::MlDsa44, key, data)
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
@@ -391,6 +420,16 @@ impl OpenMlsCrypto for PqcCrypto {
             }
             SignatureScheme::SPHINCS_SHA2_128F => {
                 let signature = oqs_sign(sig::Algorithm::SphincsSha2128fSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_128S => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2128sSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::FALCON_512 => {
+                let signature = oqs_sign(sig::Algorithm::Falcon512, key, data)
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
                 Ok(signature.into())
             }
