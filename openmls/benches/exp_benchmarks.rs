@@ -152,6 +152,7 @@ fn benchmark_key_package_creation(c: &mut Criterion, fixture: &BenchmarkFixture)
 // * of the group creator. This includes creating the group and sequentially adding all other members.
 fn benchmark_group_creation(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("2. Group Creation");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -227,6 +228,7 @@ fn benchmark_group_creation(c: &mut Criterion, fixture: &BenchmarkFixture) {
 // * adds a new member to a group of size n.
 fn benchmark_add_member_sender(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("3.1. Member Addition (Sender)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -308,6 +310,7 @@ fn benchmark_add_member_sender(c: &mut Criterion, fixture: &BenchmarkFixture) {
 // * join a group, bringing it to size n.
 fn benchmark_add_member_receiver_new(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("3.2. Member Addition (Receiver - New Member)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -405,6 +408,7 @@ fn benchmark_add_member_receiver_new(c: &mut Criterion, fixture: &BenchmarkFixtu
 // * adds a new member, bringing the group to size n.
 fn benchmark_add_member_receiver_existing(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("3.3. Member Addition (Receiver - Existing Member)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -524,6 +528,7 @@ fn benchmark_add_member_receiver_existing(c: &mut Criterion, fixture: &Benchmark
 // * message by updating their own leaf node using .self_update()
 fn benchmark_self_update_sender(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("4.1. Group Update (Sender - SelfUpdate)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -605,6 +610,7 @@ fn benchmark_self_update_sender(c: &mut Criterion, fixture: &BenchmarkFixture) {
 // * to process a Commit message from another member's self-update.
 fn benchmark_self_update_receiver(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("4.2. Group Update (Receiver - SelfUpdate)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -713,6 +719,7 @@ fn benchmark_self_update_receiver(c: &mut Criterion, fixture: &BenchmarkFixture)
 // * that removes another member from the group.
 fn benchmark_remove_member_sender(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("5.1. Member Removal (Sender)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -789,6 +796,7 @@ fn benchmark_remove_member_sender(c: &mut Criterion, fixture: &BenchmarkFixture)
 // * that removes another member from a group of original size n.
 fn benchmark_remove_member_receiver(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("5.2. Member Removal (Receiver)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -913,6 +921,7 @@ fn benchmark_remove_member_receiver(c: &mut Criterion, fixture: &BenchmarkFixtur
 // * Measure any impact of digital signature schemes on performance.
 fn benchmark_send_application_message(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("6.1. Application Message (Send)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
@@ -987,6 +996,7 @@ fn benchmark_send_application_message(c: &mut Criterion, fixture: &BenchmarkFixt
 // * an incoming application message in a group of size n.
 fn benchmark_receive_application_message(c: &mut Criterion, fixture: &BenchmarkFixture) {
     let mut group = c.benchmark_group("6.2. Application Message (Receive)");
+    group.sample_size(50);
     let ciphersuite = fixture.ciphersuite;
 
     for &size in GROUP_SIZES {
