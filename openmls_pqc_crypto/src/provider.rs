@@ -144,7 +144,17 @@ impl OpenMlsCrypto for PqcCrypto {
             | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44
             | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F
             | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S
-            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512 => Ok(()),
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512
+            // NIST Security Level 3 Ciphersuites
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA65
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192F
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192S
+            // NIST Security Level 5 Ciphersuites
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA87
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256F
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256S
+            | Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_1024
+            => Ok(()),
             _ => Err(CryptoError::UnsupportedCiphersuite),
         }
     }
@@ -159,6 +169,15 @@ impl OpenMlsCrypto for PqcCrypto {
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S,
             Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
+            // NIST Security Level 3 Ciphersuites
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA65,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192F,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192S,
+            // NIST Security Level 5 Ciphersuites
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA87,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256F,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256S,
+            Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_1024,
         ]
     }
 
@@ -334,6 +353,43 @@ impl OpenMlsCrypto for PqcCrypto {
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
                 Ok((sk.into(), pk.into()))
             }
+            // NIST Security Level 3 Signature Schemes
+            SignatureScheme::MLDSA65 => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::MlDsa65)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_192F => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2192fSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_192S => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2192sSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            // NIST Security Level 5 Signature Schemes
+            SignatureScheme::MLDSA87 => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::MlDsa87)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_256F => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2256fSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::SPHINCS_SHA2_256S => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::SphincsSha2256sSimple)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
+            SignatureScheme::FALCON_1024 => {
+                let (sk, pk) = oqs_generate_keypair(sig::Algorithm::Falcon1024)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok((sk.into(), pk.into()))
+            }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -389,6 +445,43 @@ impl OpenMlsCrypto for PqcCrypto {
                     .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
                 Ok(())
             }
+            // NIST Security Level 3 Signature Schemes
+            SignatureScheme::MLDSA65 => {
+                oqs_verify(sig::Algorithm::MlDsa65, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_192F => {
+                oqs_verify(sig::Algorithm::SphincsSha2192fSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_192S => {
+                oqs_verify(sig::Algorithm::SphincsSha2192sSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            // NIST Security Level 5 Signature Schemes
+            SignatureScheme::MLDSA87 => {
+                oqs_verify(sig::Algorithm::MlDsa87, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_256F => {
+                oqs_verify(sig::Algorithm::SphincsSha2256fSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::SPHINCS_SHA2_256S => {
+                oqs_verify(sig::Algorithm::SphincsSha2256sSimple, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
+            SignatureScheme::FALCON_1024 => {
+                oqs_verify(sig::Algorithm::Falcon1024, pk, signature, data)
+                    .map_err(|_| CryptoError::InvalidSignature)?; // Convert OQS error to CryptoError
+                Ok(())
+            }
             _ => Err(CryptoError::UnsupportedSignatureScheme),
         }
     }
@@ -430,6 +523,43 @@ impl OpenMlsCrypto for PqcCrypto {
             }
             SignatureScheme::FALCON_512 => {
                 let signature = oqs_sign(sig::Algorithm::Falcon512, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            // NIST Security Level 3 Signature Schemes
+            SignatureScheme::MLDSA65 => {
+                let signature = oqs_sign(sig::Algorithm::MlDsa65, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_192F => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2192fSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_192S => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2192sSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            // NIST Security Level 5 Signature Schemes
+            SignatureScheme::MLDSA87 => {
+                let signature = oqs_sign(sig::Algorithm::MlDsa87, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_256F => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2256fSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::SPHINCS_SHA2_256S => {
+                let signature = oqs_sign(sig::Algorithm::SphincsSha2256sSimple, key, data)
+                    .map_err(|_| CryptoError::CryptoLibraryError)?;
+                Ok(signature.into())
+            }
+            SignatureScheme::FALCON_1024 => {
+                let signature = oqs_sign(sig::Algorithm::Falcon1024, key, data)
                     .map_err(|_| CryptoError::CryptoLibraryError)?;
                 Ok(signature.into())
             }

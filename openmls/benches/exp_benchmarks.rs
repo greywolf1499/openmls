@@ -12,22 +12,31 @@ use openmls_traits::OpenMlsProvider;
 use std::time::Instant;
 
 // ─── Constants And Configuration ─────────────────────────────────────────────
-// const GROUP_SIZES: &[usize] = &[2, 10, 50];
+const GROUP_SIZES: &[usize] = &[2, 10, 50, 100, 200, 300, 400, 500, 1000];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500];
 // const GROUP_SIZES: &[usize] = &[500, 600, 700, 800, 900, 1000];
 // const GROUP_SIZES: &[usize] = &[100, 200, 300, 400, 500, 600, 700, 800, 900, 1000];
-const GROUP_SIZES: &[usize] = &[1000];
+// const GROUP_SIZES: &[usize] = &[1000];
 
 const CIPHERSUITES_TO_TEST: &[Ciphersuite] = &[
     // Classic Default MLS Ciphersuites
-    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_Ed25519,
     // Ciphersuite::MLS_128_DHKEMX25519_CHACHA20POLY1305_SHA256_Ed25519,
     // Ciphersuite::MLS_128_DHKEMP256_AES128GCM_SHA256_P256,
     // NIST Level 1 Ciphersuites
-    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
-    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA44,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128F,
     Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_128S,
-    // Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_512,
+    // NIST Level 3 Ciphersuites
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA65,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192F,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_192S,
+    // NIST Level 5 Ciphersuites
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_MLDSA87,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256F,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_SPHINCS_SHA_256S,
+    Ciphersuite::MLS_128_DHKEMX25519_AES128GCM_SHA256_FALCON_1024,
 ];
 
 const MAX_GROUP_SIZE: usize = 1000;
