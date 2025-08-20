@@ -116,5 +116,45 @@ name = "benchmark"
 harness = false
 
 [[bench]]
-name = "exp_benchmarks"
+name = "1_key_package"
+harness = false
+
+[[bench]]
+name = "2_group_creation"
+harness = false
+
+[[bench]]
+name = "3_1_add_member_sender"
+harness = false
+
+[[bench]]
+name = "3_2_add_member_receiver_new"
+harness = false
+
+[[bench]]
+name = "3_3_add_member_receiver_existing"
+harness = false
+
+[[bench]]
+name = "4_1_self_update_sender"
+harness = false
+
+[[bench]]
+name = "4_2_self_update_receiver"
+harness = false
+
+[[bench]]
+name = "5_1_remove_member_sender"
+harness = false
+
+[[bench]]
+name = "5_2_remove_member_receiver"
+harness = false
+
+[[bench]]
+name = "6_1_messaging_sender"
+harness = false
+
+[[bench]]
+name = "6_2_messaging_receiver"
 harness = false
